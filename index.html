@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Falling Pickaxe — Chat Controlled Game</title>
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; background:#0b1020; color:#e6eef8; display:flex; height:100vh; }
+    #gameWrap { margin:auto; display:flex; gap:12px; align-items:flex-start; }
+    canvas { background: linear-gradient(#0b1020,#112034); border:4px solid #162033; border-radius:8px; display:block; }
+    #ui { width:300px; }
+    .panel { background:#0f2435; padding:12px; border-radius:8px; box-shadow: 0 6px 18px rgba(0,0,0,0.6); }
+    #chat { width:100%; box-sizing:border-box; padding:8px; border-radius:6px; border:1px solid #294a63; background:#071826; color:#e6eef8; }
+    button { margin-top:8px; width:100%; padding:8px; border-radius:6px; border:none; background:#1f7aa6; color:white; cursor:pointer; }
+    button:hover { opacity:0.95; }
+    .hint { font-size:13px; color:#bcd8f2; margin-top:8px; }
+    .row { display:flex; gap:8px; margin-top:8px; }
+    .small { font-size:13px; color:#9fc7e6; }
+    #log { height:220px; overflow:auto; background:#071826; padding:8px; border-radius:6px; border:1px solid #263f53; font-size:13px; color:#cfe9ff; }
+  </style>
+</head>
+<body>
+  <div id="gameWrap">
+    <canvas id="c" width="640" height="800"></canvas>
+    <div id="ui">
+      <div class="panel">
+        <h3 style="margin:0 0 8px 0">Falling Pickaxe (Chat Control)</h3>
+        <div class="small">Score: <span id="score">0</span> | Level: <span id="level">1</span></div>
+
+        <div style="margin-top:10px;">
+          <input id="chat" placeholder="Type command (e.g., left, right, stop, boost, slow, rotate)" />
+          <button id="sendBtn">Send Command</button>
+          <div class="hint">Commands: <strong>left</strong>, <strong>right</strong>, <strong>stop</strong>, <strong>boost</strong>, <strong>slow</strong>, <strong>rotate</strong>, <strong>help</strong></div>
+        </div>
+
+        <div class="row">
+          <button id="restart">Restart</button>
+        </div>
+
+        <div style="margin-top:12px;">
+          <div id="log"></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:12px;">
+        <div class="small">How to play:</div>
+        <ul style="margin:6px 0 0 18px; color:#cfe9ff;">
+          <li>Pickaxe ऊपर से गिरती है।</li>
+          <li>Chat box में कमांड टाइप कर के platform को move कराओ और pickaxe को पकड़ो।</li>
+          <li>हर successful catch से स्कोर बढ़ता है, miss से लाइफ घटेगी।</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // Game state
+  let score = 0, level = 1, lives = 3;
+  const scoreEl = document.getElementById('score');
+  const levelEl = document.getElementById('level');
+  const logEl = document.getElementById('log');
+
+  // Platform (player) controlled by chat commands
+  const platform = {
+    x: W/2 - 60, y: H - 80, w: 120, h: 18,
+    vx: 0, speed: 5
+  };
+
+  // Falling pickaxe
+  const pick = {
+    x: Math.random()*(W-40)+20, y: -80, w: 28, h: 60,
+    vy: 2 + Math.random()*1.5,
+    angle: 0, angularVel: 0
+  };
+
+  let paused = false;
+
+  function log(msg) {
+    const p = document.createElement('div');
+    p.textContent = msg;
+    logEl.appendChild(p);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function resetPick() {
+    pick.x = Math.random()*(W-100)+50;
+    pick.y = -60 - Math.random()*120;
+    pick.vy = 2 + 0.6*level + Math.random()*1.4;
+    pick.angle = 0;
+    pick.angularVel = (Math.random()-0.5)*0.05;
+  }
+
+  function restart() {
+    score = 0; level = 1; lives = 3;
+    platform.x = W/2 - platform.w/2;
+    resetPick();
+    updateUI();
+    log("Game restarted.");
+  }
+
+  function updateUI() {
+    scoreEl.textContent = score;
+    levelEl.textContent = level;
+  }
+
+  // Command parser (chat controlled)
+  function handleCommand(raw) {
+    const cmd = raw.trim().toLowerCase();
+    if(!cmd) return;
+    log("Command: " + cmd);
+    if (cmd === 'left') {
+      platform.vx = -platform.speed;
+    } else if (cmd === 'right') {
+      platform.vx = platform.speed;
+    } else if (cmd === 'stop') {
+      platform.vx = 0;
+    } else if (cmd === 'boost') {
+      platform.vx = platform.vx < 0 ? -platform.speed*2 : platform.speed*2;
+      setTimeout(()=> { platform.vx = platform.vx < 0 ? -platform.speed : platform.speed; }, 600);
+    } else if (cmd === 'slow') {
+      platform.vx = platform.vx*0.4;
+    } else if (cmd === 'rotate') {
+      pick.angularVel += 0.25;
+    } else if (cmd === 'help') {
+      log('Help: left/right/stop/boost/slow/rotate');
+    } else {
+      log('Unknown command. Try: left, right, stop, boost, slow, rotate');
+    }
+  }
+
+  // Input binding
+  document.getElementById('sendBtn').addEventListener('click', () => {
+    const v = document.getElementById('chat').value;
+    handleCommand(v);
+    document.getElementById('chat').value = '';
+  });
+  document.getElementById('chat').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('sendBtn').click();
+    }
+  });
+  document.getElementById('restart').addEventListener('click', restart);
+
+  // Basic physics & loop
+  function step(dt) {
+    if (paused) return;
+    // platform movement
+    platform.x += platform.vx;
+    if (platform.x < 0) { platform.x = 0; platform.vx = 0; }
+    if (platform.x + platform.w > W) { platform.x = W - platform.w; platform.vx = 0; }
+
+    // pickaxe movement
+    pick.y += pick.vy;
+    pick.angle += pick.angularVel;
+
+    // collision check (simple AABB with some tolerance)
+    if (pick.y + pick.h/2 >= platform.y && pick.y + pick.h/2 <= platform.y + 20) {
+      if (pick.x > platform.x - 10 && pick.x < platform.x + platform.w + 10) {
+        // caught
+        score += Math.floor(10 * level);
+        log('Caught! +'+Math.floor(10*level)+' points');
+        resetPick();
+        // level up every 100 points
+        if (score >= level * 100) {
+          level++;
+          log('Level up! Now level ' + level);
+        }
+        updateUI();
+      }
+    }
+
+    // miss
+    if (pick.y > H + 100) {
+      lives--;
+      log('Missed! Lives left: ' + lives);
+      resetPick();
+      if (lives <= 0) {
+        log('Game Over. Final score: ' + score);
+        paused = true;
+      }
+    }
+  }
+
+  // Drawing functions
+  function drawPickaxe(x,y,angle) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    // handle (shaft)
+    ctx.fillStyle = '#a6a6a6';
+    ctx.fillRect(-4, -5, 8, 36);
+    // head - triangle + blade
+    ctx.beginPath();
+    ctx.moveTo(0, -22);
+    ctx.lineTo(24, -6);
+    ctx.lineTo(6, -2);
+    ctx.lineTo(24, 12);
+    ctx.lineTo(0, -6);
+    ctx.closePath();
+    ctx.fillStyle = '#9fb1c9';
+    ctx.fill();
+    ctx.strokeStyle = '#556777';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw() {
+    // background
+    ctx.clearRect(0,0,W,H);
+    // sky gradient done via canvas background in CSS too; add some stars/particles
+    // draw ground/platform
+    ctx.fillStyle = '#0e2b3c';
+    ctx.fillRect(0, H-40, W, 40);
+
+    // draw platform
+    ctx.fillStyle = '#2a9bd6';
+    roundRect(ctx, platform.x, platform.y, platform.w, platform.h, 6, true, false);
+
+    // drop indicator line
+    ctx.strokeStyle = 'rgba(200,220,255,0.06)';
+    ctx.beginPath();
+    ctx.moveTo(pick.x, 0);
+    ctx.lineTo(pick.x, pick.y + pick.h/2);
+    ctx.stroke();
+
+    // draw pickaxe
+    drawPickaxe(pick.x, pick.y, pick.angle);
+
+    // HUD
+    ctx.fillStyle = '#cfe9ff';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('Lives: ' + lives, 10, 22);
+    ctx.fillText('Score: ' + score, 10, 40);
+    ctx.fillText('Level: ' + level, 10, 58);
+
+    if (paused) {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(0,0,W,H);
+      ctx.fillStyle = '#fff';
+      ctx.font = '32px sans-serif';
+      ctx.fillText('GAME OVER', W/2 - 110, H/2);
+      ctx.font = '16px sans-serif';
+      ctx.fillText('Press Restart to play again', W/2 - 110, H/2 + 28);
+    }
+  }
+
+  // Utility: rounded rect
+  function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+    if (typeof r === 'undefined') r = 5;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    if (fill) ctx.fill();
+    if (stroke) ctx.stroke();
+  }
+
+  // Game loop
+  let last = 0;
+  function loop(ts) {
+    if (!last) last = ts;
+    const dt = (ts - last) / 16.666; // ~60fps unit
+    last = ts;
+    step(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // initialize
+  platform.y = H - 100;
+  resetPick();
+  updateUI();
+  log("Game ready. Type commands and press Send (or Enter).");
+  requestAnimationFrame(loop);
+
+  // Accessibility: allow arrow keys to also move (optional)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') handleCommand('left');
+    if (e.key === 'ArrowRight') handleCommand('right');
+    if (e.key === ' ') handleCommand('stop');
+  });
+
+})();
+</script>
+</body>
+      </html>
